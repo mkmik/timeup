@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:enabled="true"
+        android:icon="@drawable/ic_stat"
+        android:shortcutId="toggle"
+        android:shortcutLongLabel="@string/shortcut_toggle_long"
+        android:shortcutShortLabel="@string/shortcut_toggle">
+        <intent
+            android:action="pub.mkm.timeup.action.TOGGLE"
+            android:targetClass="pub.mkm.timeup.control.ActionActivity"
+            android:targetPackage="pub.mkm.timeup" />
+    </shortcut>
+</shortcuts>
