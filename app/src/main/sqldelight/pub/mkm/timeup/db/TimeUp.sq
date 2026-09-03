@@ -1,0 +1,86 @@
+-- The event log is the source of truth. priorities / sessions are materialised
+-- views of it, rebuilt from events on every app start and kept in sync incrementally.
+
+CREATE TABLE events (
+  id TEXT NOT NULL PRIMARY KEY,   -- ULID
+  device_id TEXT NOT NULL,
+  ts INTEGER NOT NULL,            -- epoch ms UTC
+  tz TEXT NOT NULL,               -- IANA zone at the time
+  type TEXT NOT NULL,
+  payload TEXT NOT NULL           -- JSON
+);
+CREATE INDEX events_ts ON events(ts, id);
+
+CREATE TABLE priorities (
+  id TEXT NOT NULL PRIMARY KEY,
+  name TEXT NOT NULL,
+  color INTEGER NOT NULL,
+  budget_seconds INTEGER NOT NULL,
+  wrap_up_minutes INTEGER,
+  sort_order INTEGER NOT NULL,
+  archived_at INTEGER
+);
+
+CREATE TABLE sessions (
+  id TEXT NOT NULL PRIMARY KEY,
+  priority_id TEXT NOT NULL,
+  started_at INTEGER NOT NULL,
+  ended_at INTEGER,
+  kind TEXT NOT NULL CHECK (kind IN ('live','logged')),
+  device_id TEXT NOT NULL,
+  tz TEXT NOT NULL
+);
+CREATE INDEX sessions_open ON sessions(ended_at) WHERE ended_at IS NULL;
+
+CREATE TABLE devices (
+  id TEXT NOT NULL PRIMARY KEY,
+  kind TEXT NOT NULL,
+  label TEXT
+);
+
+CREATE TABLE meta (
+  key TEXT NOT NULL PRIMARY KEY,
+  value TEXT NOT NULL
+);
+
+insertEvent:
+INSERT OR IGNORE INTO events(id, device_id, ts, tz, type, payload)
+VALUES (?, ?, ?, ?, ?, ?);
+
+selectEvents:
+SELECT * FROM events ORDER BY ts, id;
+
+countEvents:
+SELECT count(*) FROM events;
+
+deleteEvents:
+DELETE FROM events;
+
+upsertPriority:
+INSERT OR REPLACE INTO priorities(id, name, color, budget_seconds, wrap_up_minutes, sort_order, archived_at)
+VALUES (?, ?, ?, ?, ?, ?, ?);
+
+deletePriority:
+DELETE FROM priorities WHERE id = ?;
+
+deleteAllPriorities:
+DELETE FROM priorities;
+
+upsertSession:
+INSERT OR REPLACE INTO sessions(id, priority_id, started_at, ended_at, kind, device_id, tz)
+VALUES (?, ?, ?, ?, ?, ?, ?);
+
+deleteSession:
+DELETE FROM sessions WHERE id = ?;
+
+deleteAllSessions:
+DELETE FROM sessions;
+
+upsertDevice:
+INSERT OR REPLACE INTO devices(id, kind, label) VALUES (?, ?, ?);
+
+selectMeta:
+SELECT value FROM meta WHERE key = ?;
+
+upsertMeta:
+INSERT OR REPLACE INTO meta(key, value) VALUES (?, ?);

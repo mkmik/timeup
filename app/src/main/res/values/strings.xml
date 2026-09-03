@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">TimeUp</string>
+    <string name="tile_label">TimeUp</string>
+    <string name="widget_label">TimeUp</string>
+    <string name="widget_description">Today\'s budgets and the running priority.</string>
+    <string name="shortcut_toggle">Toggle</string>
+    <string name="shortcut_toggle_long">Stop the running priority, or start the last one</string>
+    <string name="permission_control_label">Control TimeUp sessions</string>
+</resources>

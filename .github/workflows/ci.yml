@@ -1,0 +1,113 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  TIMEUP_VERSION_CODE: ${{ github.run_number }}
+  TIMEUP_VERSION_NAME: 0.1.${{ github.run_number }}
+
+jobs:
+  build:
+    name: Test and build APKs
+    runs-on: ubuntu-latest
+    env:
+      HAS_KEYSTORE: ${{ secrets.TIMEUP_KEYSTORE_BASE64 != '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools platforms;android-36 build-tools;36.0.0
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Decode release keystore
+        if: env.HAS_KEYSTORE == 'true'
+        run: |
+          echo "${{ secrets.TIMEUP_KEYSTORE_BASE64 }}" | base64 -d > "$RUNNER_TEMP/release.jks"
+          echo "TIMEUP_KEYSTORE_FILE=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
+          echo "TIMEUP_KEYSTORE_PASSWORD=${{ secrets.TIMEUP_KEYSTORE_PASSWORD }}" >> "$GITHUB_ENV"
+          echo "TIMEUP_KEY_ALIAS=${{ secrets.TIMEUP_KEY_ALIAS }}" >> "$GITHUB_ENV"
+          echo "TIMEUP_KEY_PASSWORD=${{ secrets.TIMEUP_KEY_PASSWORD }}" >> "$GITHUB_ENV"
+
+      - name: Unit tests (domain + app)
+        run: ./gradlew --no-daemon test
+
+      - name: Build APKs and verify no INTERNET permission
+        run: ./gradlew --no-daemon assembleDebug assembleRelease checkNoInternetPermission
+
+      - name: Double-check the APK permissions with aapt2
+        run: |
+          AAPT2="$ANDROID_HOME/build-tools/36.0.0/aapt2"
+          for apk in app/build/outputs/apk/debug/app-debug.apk app/build/outputs/apk/release/app-release.apk; do
+            echo "== $apk"
+            "$AAPT2" dump permissions "$apk" | tee /dev/stderr | grep -q "android.permission.INTERNET" && { echo "INTERNET permission found in $apk"; exit 1; }
+          done
+          echo "No INTERNET permission in either APK"
+
+      - name: Collect APKs
+        run: |
+          mkdir -p dist
+          cp app/build/outputs/apk/debug/app-debug.apk dist/timeup-debug.apk
+          cp app/build/outputs/apk/release/app-release.apk dist/timeup-release.apk
+          if [ "$HAS_KEYSTORE" != "true" ]; then
+            echo "::warning::No release keystore secrets set; timeup-release.apk is signed with a throwaway debug key (see README)."
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: timeup-apks
+          path: dist/*.apk
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-reports
+          path: |
+            domain/build/reports/tests
+            app/build/reports/tests
+          if-no-files-found: ignore
+
+  release:
+    name: Publish "latest" release
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: timeup-apks
+          path: dist
+
+      - name: Move the "latest" tag to this commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -f latest
+          git push -f origin latest
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: Latest build (${{ env.TIMEUP_VERSION_NAME }})
+          prerelease: true
+          body: |
+            Automated build of `main` at ${{ github.sha }} (versionCode ${{ env.TIMEUP_VERSION_CODE }}).
+
+            Install on the phone: download `timeup-release.apk`, open it, allow installing from this source.
+            Or with adb: `adb install -r timeup-release.apk`.
+          files: dist/*.apk
